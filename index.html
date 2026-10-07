@@ -39,7 +39,7 @@ function tone(f0, f1, d, w, v) {
 }
 var CHARS = [
   {name: 'BLASTER', desc: '버스터 / 차지 빔', color: '#2f6bff', lite: '#7fa6ff', dark: '#1b3a99', acc: '#8fd3ff', type: 'shot', speed: 1.5, dash: 2.4, hp: 20, atkB: 0},
-  {name: 'SABER', desc: '3연 베기 / 2단 점프', color: '#d8343a', lite: '#ff8a8a', dark: '#7d1c25', acc: '#ffd24a', type: 'slash', raku: true, speed: 1.7, dash: 2.73, hp: 20, atkB: 0}
+  {name: 'SABER', desc: '3연 베기 / 2단 점프', color: '#d8343a', lite: '#ff8a8a', dark: '#7d1c25', acc: '#ffd24a', type: 'slash', speed: 1.7, dash: 2.73, hp: 20, atkB: 0}
 ];
 var ARMS = [
   [{an: '기본', ad: '밸런스형'},
@@ -68,7 +68,7 @@ var RUN_SW = [3, 2, 0, -3, -2, 0];
 var upg = [false, false, false, false], lives = 3, cleared = [];
 var stageIdx = 0, stSel = 0, ST = null, bgG = null, seed = 1, segs = [], flag = null, cap = null;
 var cpX = 40, capT = 0, rdy = 0, dT = 0, rsp = false, hgt = 0;
-var VG = null, hs = 0, T1 = 30, T2 = 70, DS = 4, AD = 0, BR = 0, hgc = '#7cf';
+var autoFin = false, enemySnap = '[]', VG = null, hs = 0, T1 = 30, T2 = 70, DS = 4, AD = 0, BR = 0, hgc = '#7cf';
 var PN = ['HEAD', 'BODY', 'ARM', 'BOOTS'];
 var PD = ['보스 무기 에너지 효율 UP', '받는 피해 -1', '버스터 데미지 +1', '이동 속도 UP'];
 var BN = ['스파이더 코어', '블룸 퀸', '썬더 호크', '마그마 드래곤', '제트 이글', '스포어 비스트', '블레이드 맨티스', '프로스트 베어', '오메가'];
@@ -97,11 +97,12 @@ function mkE(type, x, y) {
 function applyUpg() {
   T1 = 30;
   T2 = 70;
-  DS = ch ? ch.dash : 2;
-  EFF = upg[0] ? 0.5 : 1;
-  SPD = upg[3] ? 1.25 : 1;
-  AD = (upg[2] ? 1 : 0) + (ch ? ch.atkB || 0 : 0);
-  BR = upg[1] ? 1 : 0;
+  DS = (ch ? ch.dash : 2) * (hasP(2) ? 1.1 : 1);
+  EFF = (upg[0] ? 0.5 : 1) * (hasP(6) ? 0.75 : 1);
+  SPD = (upg[3] ? 1.25 : 1) * (hasP(2) ? 1.1 : 1);
+  AD = (upg[2] ? 1 : 0) + (ch ? ch.atkB || 0 : 0) + (hasP(5) ? 1 : 0);
+  BR = (upg[1] ? 1 : 0) + (hasP(3) ? 1 : 0);
+  if (hasP(8)) { T1 = 22; T2 = 52; }
 }
 
 function newGame(i, a) {
@@ -122,6 +123,10 @@ function respawn() {
   p.dashT = 0; p.dj = false; p.charge = 0; p.atk = 0; p.aj = false; p.ad = false; p.spin = 0; p.kick = 0; p.wd = false; p.nova = 0; p.novaCD = 0; p.rk = 0; p.hov = 55;
   bullets = []; ebul = []; bub = []; parts = []; trail = [];
   if (boss && !boss.dead) boss = mkBoss();
+  enemies = JSON.parse(enemySnap);
+  if (MR && !MR.done) MR.on = false;
+  if (npc && !npc.free) { npc.hp = npc.mx; npc.ci = 0; }
+  items = [];
   csx = cam; csy = camY;
   for (var di = 0; di < doors.length; di++) doors[di].lock = false;
   rsp = true;
@@ -209,8 +214,8 @@ function drawHUD() {
     ctx.fillStyle = upg[i] ? '#ffe36b' : '#333';
     if (ch && ch.type === 'shot') ctx.fillRect(42 + i * 8, 26, 6, 6);
   }
-  drawText('ENTER 메뉴', W - 6, H - 5, 8, '#778', 'right');
-  if (ch.nova || ch.raku) {
+  drawText('ENTER 정보   ESC 메뉴', W - 6, H - 5, 8, '#778', 'right');
+  if (ch.nova) {
     var nr = p.novaCD > 0 ? 1 - p.novaCD / (p.novaMax || 200) : 1;
     drawText('F', 42, 72, 9, nr >= 1 ? '#6fe8ff' : '#778');
     ctx.fillStyle = '#10131f';
@@ -233,7 +238,6 @@ function drawStageSel() {
     ctx.fillRect((i * 97) % W, (i * 53) % H, 1, 1);
   }
   drawText('STAGE SELECT', W / 2, 40, 24, '#8cf', 'center');
-  var done = 0;
   for (n = 0; n < 8; n++) {
     var S = STAGES[n], cx = 30 + (n % 4) * 112, cy = 56 + Math.floor(n / 4) * 84, on = stSel === n;
     ctx.fillStyle = S.a;
@@ -249,30 +253,15 @@ function drawStageSel() {
     ctx.fillStyle = '#10131f';
     ctx.fillRect(cx, cy + 56, 104, 18);
     drawText(S.n, cx + 52, cy + 69, 11, '#fff', 'center');
-    if (S.p >= 0 && ch && ch.type === 'shot') {
-      ctx.fillStyle = upg[S.p] ? '#ffe36b' : '#444';
-      ctx.fillRect(cx + 6, cy + 6, 8, 8);
-    }
-    if (wp[n]) { ctx.fillStyle = WC[n]; ctx.fillRect(cx + 6, cy + 18, 8, 8); }
-    if (cleared[n]) { done++; drawText('✔', cx + 98, cy + 14, 12, '#6f6', 'right'); }
+    if (cleared[n]) { drawText('✔', cx + 98, cy + 14, 12, '#6f6', 'right'); }
     ctx.strokeStyle = on ? (Math.floor(t / 10) % 2 ? '#ff0' : '#fff') : '#334';
     ctx.lineWidth = on ? 3 : 1;
     ctx.strokeRect(cx, cy, 104, 74);
+    (function (k) { reg(cx, cy, 104, 74, function () { if (stSel === k) pressed.Enter = true; else stSel = k; }); })(n);
   }
-  for (i = 0; i < 4; i++) {
-    ctx.fillStyle = ch && ch.type === 'shot' ? (upg[i] ? '#ffe36b' : '#333') : '#1a1a22';
-    ctx.fillRect(150 + i * 50, 238, 44, 14);
-    drawText(PN[i], 172 + i * 50, 249, 9, upg[i] ? '#000' : '#888', 'center');
-  }
-  var fon = stSel === 8, fl = done >= 8;
-  ctx.fillStyle = fl ? '#4a0a14' : '#1a1a22';
-  ctx.fillRect(30, 218, 450 - 28, 16);
-  ctx.strokeStyle = fon ? (Math.floor(t / 10) % 2 ? '#ff0' : '#fff') : '#334';
-  ctx.lineWidth = fon ? 3 : 1;
-  ctx.strokeRect(30, 218, 450 - 28, 16);
-  drawText(fl ? (cleared[8] ? 'FINAL STAGE  ✔' : 'FINAL STAGE') : 'FINAL STAGE  잠김 - 8개 스테이지 클리어 필요', W / 2, 230, 11, fl ? '#f66' : '#667', 'center');
-  drawText('LIFE x' + lives + '  HEART ' + htCount() + '/8', 30, 249, 10, '#fff');
-  drawText(done >= 8 ? 'ALL STAGES CLEAR!' : '←→↑↓ 선택  ENTER 출격  A 무기전환  BACKSPACE 캐릭터', W / 2, 264, 10, done >= 8 ? '#ff0' : '#889', 'center');
+  drawText('←→↑↓ 선택   ENTER 출격   ESC 메인 화면', W / 2, 258, 10, '#889', 'center');
+  reg(8, 8, 70, 26, function () { pressed.Backspace = true; });
+  drawText('◀ 뒤로', 14, 26, 12, '#8cf');
 }
 
 function setKey(c, d) {
@@ -290,6 +279,52 @@ var TR = ['거미줄 구역: 이동·점프력 감소', '가시꽃 + 점프 패�
 var WN = ['웹 샷', '꽃잎탄', '썬더', '화염구', '제트탄', '포자탄', '부메랑', '빙결탄'];
 var WC = ['#c8b8ff', '#ff9ae0', '#ffe36b', '#ff7a3a', '#8fd3ff', '#c8ff6a', '#7aff9a', '#e8f8ff'];
 var WK = [5, 3, 6, 7, 1, 2, 0, 4, -9];
+var PARTS = [
+  {n: '블레이드 가드', d: '공격이 적의 탄을 상쇄'},
+  {n: '에너지 스캐빈저', d: '적이 회복 아이템을 더 자주 드롭'},
+  {n: '스피드 부스터', d: '이동·대시 속도 +10%'},
+  {n: '아머 플레이트', d: '받는 피해 -1 (최소 1)'},
+  {n: '점프 부스트', d: '점프력 +8%'},
+  {n: '파워 코어', d: '공격력 +1'},
+  {n: '웨폰 리사이클러', d: '특수무기 소모 에너지 -25%'},
+  {n: '리바이브 칩', d: '스테이지당 1회, 치명타를 체력 1로 버팀'},
+  {n: '차지 부스터', d: '차지 시간 단축 / 제로는 연속 공격 단축'}
+];
+var npc = null, cfBack = 'stage', owned = [], eq = [], conf = 1, stShow = 0, showIdx = 0, HIT = [], eqSel = 0, TB = null, tvKey = '';
+function hasP(i) { return eq.indexOf(i) >= 0; }
+function loadParts() {
+  try {
+    var d = JSON.parse(localStorage.getItem('nh_parts') || 'null');
+    if (d) { owned = d.o || []; eq = (d.e || []).filter(function (i) { return owned[i]; }).slice(0, 2); }
+  } catch (e) {}
+}
+function saveParts() { try { localStorage.setItem('nh_parts', JSON.stringify({o: owned, e: eq})); } catch (e) {} }
+function toggleEquip(i) {
+  var k = eq.indexOf(i);
+  if (!owned[i]) { tone(150, 100, 0.2, 'square', 0.08); return; }
+  if (k >= 0) eq.splice(k, 1);
+  else if (eq.length >= 2) { tone(150, 100, 0.2, 'square', 0.08); return; }
+  else eq.push(i);
+  saveParts();
+  tone(700, 1000, 0.08, 'square', 0.06);
+}
+function reg(x, y, w, h, fn) { HIT.push({x: x, y: y, w: w, h: h, fn: fn}); }
+function tapAt(x, y) {
+  for (var i = HIT.length - 1; i >= 0; i--) {
+    var r = HIT[i];
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { r.fn(); return true; }
+  }
+  return false;
+}
+function hbar(x, y, v, m, c, w) {
+  var i, sw = Math.max(2, Math.floor(w / m));
+  ctx.fillStyle = '#10131f';
+  ctx.fillRect(x - 1, y - 1, sw * m + 2, 8);
+  for (i = 0; i < m; i++) {
+    ctx.fillStyle = i < v ? c : '#2a2f45';
+    ctx.fillRect(x + i * sw, y, sw - 1, 6);
+  }
+}
 var ROOT = [110, 123, 98, 87, 131, 104, 117, 92, 82];
 var PAT = [[0,3,7,12,7,3,0,3,5,8,12,8,5,3,0,-1],[0,0,7,7,8,8,7,5,3,3,5,5,2,2,0,-1],[12,10,7,5,3,5,7,10,12,12,10,7,5,3,0,0],[0,7,3,7,5,8,7,12,10,7,5,7,3,5,2,0]];
 
@@ -305,7 +340,7 @@ function bgm() {
   var spd = bo ? 6 : 8;
   if (t % spd !== 0) return;
   var sp = Math.floor(t / spd), r, v, n, f;
-  if (state === 'select' || state === 'stage' || state === 'title' || state === 'option') { r = 110; v = 1; }
+  if (state === 'select' || state === 'stage' || state === 'title' || state === 'option' || state === 'equip' || state === 'bossshow') { r = 110; v = 1; }
   else if (state === 'play') { r = ROOT[stageIdx] || 110; v = bo ? 3 : stageIdx % 3; }
   else return;
   n = PAT[v][sp % 16];
@@ -375,7 +410,7 @@ function dropItem(e) {
     items.push({x: e.x + 12, y: e.y, vy: -2, type: 1, l: 900, w: 10, h: 10});
     return;
   }
-  var r = Math.random(), wneed = false, wi2;
+  var r = Math.random() * (hasP(1) ? 0.7 : 1), wneed = false, wi2;
   for (wi2 = 0; wi2 < 8; wi2++) if (wp[wi2] && we[wi2] < 16) wneed = true;
   if (r < 0.06) items.push({x: e.x, y: e.y, vy: -2, type: 1, l: 600, w: 10, h: 10});
   else if (r < 0.24) items.push({x: e.x, y: e.y, vy: -2, type: 0, l: 600, w: 6, h: 6});
@@ -683,8 +718,11 @@ function drawTitle() {
   ctx.fillRect(0, 230, W, 2);
   drawTextO('NEO', W / 2, 100, 56, Math.floor(t / 20) % 2 ? '#8cf' : '#aef', 'center');
   drawTextO('HUNTERS', W / 2, 142, 40, '#fff', 'center');
-  var M = ['START', 'OPTION'];
-  for (i = 0; i < 2; i++) drawTextO((tm === i ? '▶ ' : '   ') + M[i], W / 2, 188 + i * 26, 16, tm === i ? '#ff0' : '#ccc', 'center');
+  var M = ['START', 'EQUIP', 'OPTION'];
+  for (i = 0; i < 3; i++) {
+    drawTextO((tm === i ? '▶ ' : '   ') + M[i], W / 2, 180 + i * 24, 16, tm === i ? '#ff0' : '#ccc', 'center');
+    (function (k) { reg(W / 2 - 70, 180 + k * 24 - 18, 140, 24, function () { if (tm === k) pressed.Enter = true; else tm = k; }); })(i);
+  }
   drawText('↑↓ 선택   ENTER 확인', W / 2, 262, 10, '#889', 'center');
 }
 
@@ -704,7 +742,9 @@ function drawOption() {
       ctx.fillRect(90, y - 14, 300, 19);
     }
     drawText(R[i], 110, y, 12, om === i ? '#ff0' : '#ccc');
+    (function (k) { reg(90, y - 14, 300, 19, function () { om = k; if (k !== 0 && !(k >= 2 && k <= 5)) pressed.Enter = true; }); })(i);
     if (i === 0) {
+      for (v = 0; v < 10; v++) (function (q) { reg(250 + q * 10, y - 12, 10, 16, function () { om = 0; VOL = (q + 1) / 10; saveOpt(); tone(600, 600, 0.08, 'square', 0.08); }); })(v);
       for (v = 0; v < 10; v++) {
         ctx.fillStyle = v < Math.round(VOL * 10) ? '#8cf' : '#334';
         ctx.fillRect(250 + v * 10, y - 9, 8, 10);
@@ -713,6 +753,8 @@ function drawOption() {
     else if (i >= 2 && i <= 5) drawText(rb === i - 2 ? '키를 누르세요...' : codeName(OVR[LOG[i - 2]] || LOG[i - 2]), 250, y, 12, rb === i - 2 ? '#ff0' : '#fff');
   }
   drawText('←→ 볼륨   ENTER 선택   BACKSPACE 뒤로', W / 2, 262, 10, '#889', 'center');
+  reg(8, 8, 70, 26, function () { pressed.Backspace = true; });
+  drawText('◀ 뒤로', 14, 26, 12, '#8cf');
 }
 
 var flashT = 0;
@@ -750,11 +792,11 @@ function heartTick() {
     tone(700, 1800, 0.35, 'triangle', 0.12);
     burst(p.x + 6, p.y + 10, '#ff6a8a', 16, 5);
   }
-  if (hgt >= 46 && p.hp < p.maxhp && hgt % 2 === 0) {
+  if (hgt >= 46 && p.hp < p.hpT && hgt % 2 === 0) {
     p.hp++;
     tone(500 + p.hp * 25, 500 + p.hp * 25, 0.05, 'triangle', 0.06);
   }
-  if (hgt >= 46 && p.hp >= p.maxhp && hgt >= 80) state = 'play';
+  if (hgt >= 46 && p.hp >= p.hpT && hgt >= 70) { p.inv = 60; state = 'play'; }
   updParts();
 }
 
@@ -872,22 +914,192 @@ function midAI(e, p) {
     e.og = false;
   }
   if (e.y >= e.fy) { e.y = e.fy; e.vy = 0; e.og = true; }
+  if (e.og && e.air) {
+    e.air = false;
+    shake = 5;
+    tone(120, 50, 0.2, 'sawtooth', 0.1);
+    ebul.push({x: e.x + e.w, y: e.y + e.h - 8, w: 10, h: 8, vx: 2.6, vy: 0, l: 80, c: '#fa3'});
+    ebul.push({x: e.x - 10, y: e.y + e.h - 8, w: 10, h: 8, vx: -2.6, vy: 0, l: 80, c: '#fa3'});
+  }
   if (e.og) {
     e.vx = 0;
     e.jt = (e.jt || 0) + 1;
-    if (e.jt >= 100) { e.jt = 0; e.vy = -6; e.vx = p.x < e.x ? -1.6 : 1.6; e.og = false; }
+    if (e.jt >= (e.hp < (e.mx || 14) / 2 ? 70 : 100)) { e.jt = 0; e.vy = -6; e.vx = p.x < e.x ? -1.8 : 1.8; e.og = false; e.air = true; }
   }
   if (e.vx) {
     nx = e.x + e.vx;
     if (nx < e.pl || nx + e.w > e.pr || hit(nx, e.y, e.w, e.h)) e.vx = 0;
     else e.x = nx;
   }
-  if (e.sc % 100 === 55) {
+  if (e.sc % (e.hp < (e.mx || 14) / 2 ? 70 : 100) === 55) {
     for (var k = -1; k <= 1; k++) {
       var a = Math.atan2(p.y - e.y, p.x - e.x) + k * 0.3;
       ebul.push({x: e.x + 10, y: e.y + 8, w: 5, h: 5, vx: Math.cos(a) * 2.2, vy: Math.sin(a) * 2.2});
     }
   }
+}
+
+function npcHurt(d) {
+  if (!npc || npc.free || npc.ci > 0) return;
+  npc.hp -= d;
+  npc.ci = 6;
+  burst(npc.x + 9, npc.y + 12, '#cfe', 4);
+  tone(900, 600, 0.06, 'square', 0.06);
+  if (npc.hp <= 0) {
+    npc.free = true;
+    npc.t = 0;
+    owned[npc.stage] = true;
+    saveParts();
+    mA = 'RESCUED!';
+    mB = PARTS[npc.stage].n + ' 획득';
+    capT = 170;
+    tone(500, 1800, 0.5, 'triangle', 0.13);
+    burst(npc.x + 9, npc.y + 12, '#ffe36b', 24, 6);
+  }
+}
+
+function placeNpc(i) {
+  var n = SURF.length, k, s, c, kk;
+  npc = null;
+  if (owned[i] || n < 4) return;
+  for (kk = 0; kk < n; kk++) {
+    k = (Math.floor(n * 0.35) + kk) % n;
+    if (k === 0 || k === n - 1) continue;
+    s = SURF[k];
+    if (s.w < 80) continue;
+    c = {x: s.x + Math.floor(s.w / 2) - 9, y: s.y - 28, w: 18, h: 28};
+    if (hit(c.x - 2, c.y - 6, c.w + 4, c.h + 6)) continue;
+    if (MR && c.x > MR.x - 40 && c.x < MR.x + MR.w + 40 && Math.abs(c.y - MR.y) < 200) continue;
+    if (Math.abs(c.x - SX) + Math.abs(c.y - SY) < 260) continue;
+    npc = {x: c.x, y: c.y, w: 18, h: 28, hp: 6, mx: 6, free: false, t: 0, ci: 0, sid: -1, stage: i};
+    return;
+  }
+}
+
+function updateNpc() {
+  if (!npc) return;
+  if (npc.ci > 0) npc.ci--;
+  if (npc.free) {
+    npc.t++;
+    if (npc.t > 140) npc = null;
+  }
+}
+
+function midDefeated(e) {
+  if (!MR) return;
+  MR.done = true;
+  MR.on = false;
+  cpX = MR.tower ? MR.sx : MR.x + MR.w / 2;
+  cpY = MR.y - 24;
+  flashT = 6;
+  shake = 14;
+  tone(200, 900, 0.5, 'triangle', 0.12);
+}
+
+function updateMid() {
+  var p = player, i, d, near, lockd, inside, e, o0, cx;
+  if (!p || !MR) return;
+  inside = MR.tower
+    ? (p.x > 20 && p.x < 456 && p.y + 20 <= MR.y && p.y > MR.y - 96)
+    : (p.x > MR.x + 30 && p.x + p.w < MR.x + MR.w - 30 && p.y + 20 <= MR.y + 2 && p.y > MR.y - MR.h);
+  if (!MR.on && !MR.done && inside) {
+    MR.on = true;
+    e = mkE(3, MR.sx, MR.y - 24);
+    e.hp = 30; e.mx = 30; e.fy = MR.y - 24;
+    e.pl = MR.x + 20; e.pr = MR.x + MR.w - 20;
+    e.act = true; e.sc = 0;
+    enemies.push(e);
+    warnT = 70;
+    tone(220, 220, 0.5, 'square', 0.1);
+  }
+  for (i = 0; i < mdoors.length; i++) {
+    d = mdoors[i];
+    lockd = d.kind === 'in' ? (MR.on && !MR.done) : !MR.done;
+    cx = d.x + d.w / 2;
+    near = d.shape === 'd'
+      ? (Math.abs(p.x + 6 - cx) < 34 && p.y + 20 > d.y - 10 && p.y < d.y + d.h + 10)
+      : (Math.abs(p.x + 6 - cx) < d.w / 2 + 30 && Math.abs(p.y + 10 - d.y) < 110 && (p.y + 10 > d.y + d.h || p.y + 20 > d.y + 2));
+    o0 = d.o;
+    if (!lockd && near) d.o = Math.min(1, d.o + (d.shape === 's' ? 0.15 : 0.05));
+    else d.o = Math.max(0, d.o - 0.05);
+    d.s[1] = d.o >= 1 ? -9999 : d.y;
+    if (d.shape === 'd') d.s[3] = Math.ceil(d.h * (1 - d.o));
+    if (o0 === 0 && d.o > 0) tone(200, 400, 0.25, 'sawtooth', 0.06);
+    if (o0 > 0 && d.o === 0) tone(300, 100, 0.2, 'square', 0.07);
+  }
+}
+
+function drawMid() {
+  var i, d, h, k;
+  for (i = 0; i < mdoors.length; i++) {
+    d = mdoors[i];
+    ctx.fillStyle = '#445';
+    if (d.shape === 'd') {
+      h = Math.floor(d.h * (1 - d.o));
+      ctx.fillRect(d.x - 3, d.y - 4, d.w + 6, 5);
+      if (h > 0) {
+        ctx.fillStyle = '#10131f';
+        ctx.fillRect(d.x - 1, d.y, d.w + 2, h + 1);
+        ctx.fillStyle = d.kind === 'out' && !MR.done ? '#b86' : '#8896b8';
+        ctx.fillRect(d.x, d.y, d.w, h);
+        ctx.fillStyle = '#ffe36b';
+        for (k = 0; k < h; k += 8) ctx.fillRect(d.x + 3, d.y + k, d.w - 6, 3);
+      }
+    } else if (d.o < 1) {
+      ctx.globalAlpha = 1 - d.o * 0.7;
+      ctx.fillStyle = '#10131f';
+      ctx.fillRect(d.x - 1, d.y - 1, d.w + 2, d.h + 2);
+      ctx.fillStyle = d.kind === 'out' && !MR.done ? '#b86' : '#8896b8';
+      ctx.fillRect(d.x, d.y, d.w, d.h);
+      ctx.fillStyle = '#ffe36b';
+      for (k = 0; k < d.w; k += 10) ctx.fillRect(d.x + k + 2, d.y + 5, 6, 3);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function drawNpc() {
+  var n = npc, x, y, blink;
+  if (!n) return;
+  x = Math.floor(n.x);
+  y = Math.floor(n.y);
+  if (n.free) {
+    y -= Math.floor(Math.abs(Math.sin(n.t / 8)) * 10);
+    ctx.fillStyle = '#10131f';
+    ctx.fillRect(x + 2, y + 6, 14, 22);
+    ctx.fillStyle = '#6fd3ff';
+    ctx.fillRect(x + 3, y + 14, 12, 12);
+    ctx.fillStyle = '#ffd9a8';
+    ctx.fillRect(x + 4, y + 4, 10, 9);
+    ctx.fillStyle = '#10131f';
+    ctx.fillRect(x + 6, y + 7, 2, 2);
+    ctx.fillRect(x + 11, y + 7, 2, 2);
+    ctx.fillStyle = '#ffd9a8';
+    ctx.fillRect(x - 1, y + 8 - (Math.floor(n.t / 6) % 2) * 4, 4, 3);
+    ctx.fillRect(x + 15, y + 8 - (Math.floor(n.t / 6) % 2) * 4, 4, 3);
+    if (n.t < 100) drawText('THANKS!', x + 9, y - 4, 9, '#ffe36b', 'center');
+    return;
+  }
+  ctx.fillStyle = '#6fd3ff';
+  ctx.fillRect(x + 4, y + 14, 10, 12);
+  ctx.fillStyle = '#ffd9a8';
+  ctx.fillRect(x + 4, y + 6, 10, 8);
+  ctx.fillStyle = '#10131f';
+  ctx.fillRect(x + 6, y + 9, 2, 2);
+  ctx.fillRect(x + 11, y + 9, 2, 2);
+  ctx.fillStyle = n.ci > 0 ? '#fff' : '#9ab';
+  ctx.fillRect(x, y, 2, n.h);
+  ctx.fillRect(x + 16, y, 2, n.h);
+  ctx.fillRect(x, y, n.w, 2);
+  ctx.fillRect(x, y + n.h - 2, n.w, 2);
+  for (blink = 5; blink < n.w - 2; blink += 5) ctx.fillRect(x + blink, y, 1, n.h);
+  ctx.fillStyle = '#10131f';
+  ctx.fillRect(x - 1, y + n.h + 1, n.w + 2, 2);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x - 1, y - 8, n.w + 2, 4);
+  ctx.fillStyle = '#6f6';
+  ctx.fillRect(x, y - 7, Math.max(0, Math.floor(n.w * n.hp / n.mx)), 2);
+  if (player && Math.abs(player.x - n.x) < 280 && Math.floor(t / 14) % 2 === 0) drawText('HELP!', x + 9, y - 12, 10, '#ff5', 'center');
 }
 
 function makeTouch() {
@@ -905,7 +1117,8 @@ function makeTouch() {
     ['KeyV', 'SP', 'right:' + (b + Math.floor(u * 0.2)) + 'px;bottom:' + (b + u * 1.5 + g) + 'px;', Math.floor(u * 0.7)],
     ['KeyF', 'GA', 'right:' + (b + 2 * u + 2 * g) + 'px;bottom:' + (b + u * 1.5) + 'px;', Math.floor(u * 0.7)],
     ['KeyA', 'WPN','right:' + (b + u + g) + 'px;bottom:' + (b + u * 1.9) + 'px;', Math.floor(u * 0.7)],
-    ['Enter', 'OK', 'right:' + b + 'px;top:12px;', Math.floor(u * 0.7)],
+    ['Enter', 'INFO', 'right:' + b + 'px;top:12px;', Math.floor(u * 0.8)],
+    ['Escape', 'MENU', 'right:' + (b + Math.floor(u * 0.8) + 10) + 'px;top:12px;', Math.floor(u * 0.8)],
     ['Backspace', '←', 'left:12px;top:12px;', Math.floor(u * 0.6)]
   ];
   for (i = 0; i < B.length; i++) {
@@ -913,6 +1126,8 @@ function makeTouch() {
     el.className = 'tb';
     el.textContent = B[i][1];
     el.style.cssText = B[i][2] + 'width:' + B[i][3] + 'px;height:' + B[i][3] + 'px;';
+    TB = TB || {};
+    TB[B[i][0]] = el;
     (function (c, node) {
       node.addEventListener('touchstart', function (ev) {
         ev.preventDefault();
@@ -972,11 +1187,47 @@ function BL(x, y, w, h, walk) {
   if (walk !== false) SURF.push({x: x, y: y, w: w});
 }
 
+var MR = null, mdoors = [], TWR = [];
+
+function midRoom(fx, fy, w, h, roof) {
+  var dl = [fx, fy - 56, 14, 56], dr = [fx + w - 14, fy - 56, 14, 56];
+  MR = {x: fx, y: fy, w: w, h: h, lock: false, done: false, cleared: false, cp: false, tower: false, sx: fx + w / 2 - 10};
+  SOL.push([fx, fy, w, 120]);
+  SOL.push([fx, fy - h, 14, h - 56, 1], [fx + w - 14, fy - h, 14, h - 56, 1]);
+  if (roof === 'tall') SOL.push([fx, -600, w, fy - h + 600, 1]);
+  SOL.push(dl, dr);
+  mdoors.push({s: dl, x: fx, y: fy - 56, w: 14, h: 56, o: 0, kind: 'in', shape: 'd'});
+  mdoors.push({s: dr, x: fx + w - 14, y: fy - 56, w: 14, h: 56, o: 0, kind: 'out', shape: 'd'});
+}
+
+function twStep(st, lo, hi, side0, yFix) {
+  var rs = 28 + Math.floor(rnd() * 8), gap = 14 + Math.floor(rnd() * (rs >= 32 ? 10 : 16)), nw = 70 + Math.floor(rnd() * 50), y2, side, sp, nx;
+  var sL = st.px - gap - lo, sR = hi - (st.px + st.pw + gap);
+  side = side0 || st.side || (rnd() < 0.5 ? -1 : 1);
+  if ((side < 0 ? sL : sR) < 56) side = -side;
+  if (!side0 && st.side && side !== st.side) rs = 38;
+  y2 = yFix || (st.y - rs);
+  sp = side < 0 ? sL : sR;
+  if (sp < 56) { gap = 14; sL = st.px - gap - lo; sR = hi - (st.px + st.pw + gap); side = sL > sR ? -1 : 1; sp = side < 0 ? sL : sR; }
+  nw = Math.max(44, Math.min(nw, sp));
+  nx = side < 0 ? st.px - gap - nw : st.px + st.pw + gap;
+  BL(nx, y2, nw, 10);
+  TWR.push([nx, y2, nw]);
+  st.y = y2; st.px = nx; st.pw = nw; st.side = side;
+}
+
 function L0() {
-  var x = 520, k = 0, w;
+  var x = 520, k = 0, w, rm = false;
   LH = 270; SX = 40; SY = 210; EY = 230;
   BL(0, 230, 520, 40);
   while (x < 2850) {
+    if (!rm && x >= 1350) {
+      rm = true;
+      BL(x, 230, 60, 40);
+      midRoom(x + 60, 230, 440, 130, 'tall');
+      BL(x + 500, 230, 60, 40);
+      x += 560;
+    }
     x += 40 + Math.floor(rnd() * 24);
     w = 200 + Math.floor(rnd() * 140);
     BL(x, 230, w, 40);
@@ -990,29 +1241,56 @@ function L0() {
 }
 
 function L1() {
-  var i, x, y;
+  var i, x, y, bx = 1875;
   LH = 910; SX = 40; SY = 808; EY = 240;
   for (i = 0; i < 15; i++) {
-    x = i * 190;
+    if (i < 7) { x = i * 190; } else { x = bx + (i - 7) * 190; }
     y = 828 - i * 42;
+    if (i === 7) BL(1810, 576, 60, 24);
     BL(x, y, 230, 24);
     if (i % 2 === 1) BL(x + 70, y - 100, 70, 10);
     if (i % 3 === 0 && i > 0) BL(x + 150, y - 60, 40, 10);
+    if (i === 6) midRoom(1370, 576, 440, 130, 'tall');
   }
-  EX = 2710;
+  EX = bx + 7 * 190 + 50;
 }
 
 function L2() {
-  var i, y;
-  LH = 1532; SX = 60; SY = 1472; EY = 240;
+  var st, n, i, FYm, hx, hw, hatchX, hatchW = 100, roofTop, lo, hi, side0, side;
+  LH = 1560; SX = 60; SY = 1500; EY = 240;
+  TWR = [];
   BL(0, 0, 16, LH, false);
   BL(464, 240, 16, LH - 240, false);
-  BL(16, 1492, 448, 40);
-  for (i = 1; i <= 35; i++) {
-    y = 1492 - i * 36;
-    if (i % 2) BL(248, y, 216, 10);
-    else BL(16, y, 216, 10);
-  }
+  BL(16, 1520, 448, 40);
+  st = {y: 1520, px: 60, pw: 60};
+  for (i = 0; i < 17; i++) twStep(st, 16, 464, i === 0 ? 1 : 0);
+  // --- mid-boss chamber (floor with entry hole above the last platform, roof with hatch on the far side)
+  FYm = st.y - 40;
+  hw = Math.min(100, st.pw);
+  hx = st.px + Math.floor((st.pw - hw) / 2);
+  if (hx > 16) SOL.push([16, FYm, hx - 16, 10]);
+  if (hx + hw < 464) SOL.push([hx + hw, FYm, 464 - (hx + hw), 10]);
+  hatchX = hx + hw / 2 < 240 ? 364 : 16;
+  roofTop = FYm - 96;
+  if (hatchX > 16) { SOL.push([16, roofTop, hatchX - 16, 14, 1]); SOL.push([hatchX, FYm - 66, 50, 10], [hatchX + 50, FYm - 34, 50, 10]); }
+  else { SOL.push([hatchX + hatchW, roofTop, 464 - (hatchX + hatchW), 14, 1]); SOL.push([hatchX + 50, FYm - 66, 50, 10], [hatchX, FYm - 34, 50, 10]); }
+  var inS = [hx, FYm, hw, 10], outS = [hatchX, roofTop, hatchW, 14];
+  SOL.push(inS, outS);
+  mdoors.push({s: inS, x: hx, y: FYm, w: hw, h: 10, o: 0, kind: 'in', shape: 's'});
+  mdoors.push({s: outS, x: hatchX, y: roofTop, w: hatchW, h: 14, o: 0, kind: 'out', shape: 's'});
+  MR = {x: 16, y: FYm, w: 448, h: 90, lock: false, done: false, cleared: false, cp: false, tower: true, hx: hx, hw: hw, sx: hx + hw / 2 < 240 ? 330 : 90};
+  TWR.push(['hole', hx, hw, FYm, hatchX, roofTop]);
+  // --- upper half
+  if (hatchX > 16) { st = {y: roofTop, px: hatchX - 60, pw: 60}; lo = 16; hi = hatchX - 24; side0 = -1; }
+  else { st = {y: roofTop, px: hatchX + hatchW, pw: 60}; lo = hatchX + hatchW + 24; hi = 464; side0 = 1; }
+  for (i = 0; i < 3; i++) twStep(st, lo, hi, i === 0 ? side0 : 0);
+  while (st.y - 41 > 276) twStep(st, 16, 464, 0);
+  twStep(st, 16, 464, 0, 276);
+  hw = Math.min(100, st.pw);
+  hx = st.px + Math.floor((st.pw - hw) / 2);
+  if (hx > 16) SOL.push([16, 240, hx - 16, 10, 1]);
+  if (hx + hw < 464) SOL.push([hx + hw, 240, 464 - (hx + hw), 10, 1]);
+  TWR.push(['top', hx, hw]);
   EX = 480;
 }
 
@@ -1024,18 +1302,29 @@ function L3() {
   for (i = 0; i < 8; i++) {
     y = 70 + i * 120;
     if (i === 7) BL(16, y, 784, 16);
-    else if (i % 2 === 0) BL(16, y, 724, 16);
+    else if (i === 2) {
+      BL(16, y, 114, 16);
+      midRoom(130, y, 480, 104, 'none');
+      BL(610, y, 130, 16);
+    } else if (i % 2 === 0) BL(16, y, 724, 16);
     else BL(80, y, 724, 16);
-    if (i < 7) BL(300 + (i % 4) * 40, y - 24, 40, 24);
+    if (i < 7 && i !== 2) BL(300 + (i % 4) * 40, y - 24, 40, 24);
   }
   EX = 800;
 }
 
 function L4() {
-  var x = 220, y = 230, w;
+  var x = 220, y = 230, w, rm = false;
   LH = 300; SX = 40; SY = 210; EY = 230;
   BL(0, 230, 200, 30);
   while (x < 2850) {
+    if (!rm && x >= 1350) {
+      rm = true;
+      BL(x, y, 60, 24);
+      midRoom(x + 60, y, 440, 130, 'tall');
+      BL(x + 500, y, 60, 24);
+      x += 560;
+    }
     x += 36 + Math.floor(rnd() * 36);
     w = 100 + Math.floor(rnd() * 100);
     y = Math.max(150, Math.min(240, y + Math.floor((rnd() - 0.5) * 80)));
@@ -1047,10 +1336,17 @@ function L4() {
 }
 
 function L5() {
-  var x = 160, y = 230, w, st = [-40, -20, 0, 20, 40];
+  var x = 160, y = 230, w, st = [-40, -20, 0, 20, 40], rm = false;
   LH = 300; SX = 40; SY = 210; EY = 240;
   BL(0, 230, 160, 70);
   while (x < 2850) {
+    if (!rm && x >= 1350) {
+      rm = true;
+      BL(x, y, 60, 300 - y);
+      midRoom(x + 60, y, 440, 130, 'tall');
+      BL(x + 500, y, 60, 300 - y);
+      x += 560;
+    }
     w = 100 + Math.floor(rnd() * 70);
     y = Math.max(170, Math.min(250, y + st[Math.floor(rnd() * 5)]));
     BL(x, y, w, 300 - y);
@@ -1065,16 +1361,16 @@ function L6() {
   var i;
   LH = 560; SX = 40; SY = 80; EY = 240;
   for (i = 0; i < 7; i++) BL(i * 140, 100 + i * 50, 170, 20);
-  BL(980, 440, 520, 30);
-  BL(1570, 440, 420, 30);
-  BL(2060, 440, 330, 30);
-  BL(1250, 396, 40, 44);
-  BL(1760, 396, 50, 44);
-  BL(1160, 350, 100, 12);
-  BL(1660, 350, 110, 12);
-  BL(2180, 398, 100, 12);
-  for (i = 0; i < 5; i++) BL(2410 + i * 140, 400 - i * 40, 170, 20);
-  EX = 3030;
+  BL(980, 440, 120, 30);
+  midRoom(1100, 440, 440, 130, 'tall');
+  BL(1540, 440, 80, 30);
+  BL(1690, 440, 420, 30);
+  BL(2180, 440, 330, 30);
+  BL(1790, 396, 50, 44);
+  BL(1880, 350, 110, 12);
+  BL(2300, 396, 50, 44);
+  for (i = 0; i < 5; i++) BL(2530 + i * 140, 400 - i * 40, 170, 20);
+  EX = 3150;
 }
 
 function L7() {
@@ -1082,6 +1378,12 @@ function L7() {
   LH = 300; SX = 40; SY = 210; EY = 230;
   BL(0, 230, 460, 40);
   for (k = 0; k < 8; k++) {
+    if (k === 4) {
+      BL(x, 230, 60, 40);
+      midRoom(x + 60, 230, 440, 130, 'tall');
+      BL(x + 500, 230, 60, 40);
+      x += 600;
+    }
     BL(x, 230, 300, 40);
     if (k % 2 === 0) { BL(x + 70, 192, 56, 38); BL(x + 160, 150, 90, 12); }
     else { BL(x + 50, 168, 90, 12); BL(x + 190, 196, 40, 34); }
@@ -1094,9 +1396,13 @@ function L8() {
   var i;
   LH = 600; SX = 40; SY = 480; EY = 420;
   for (i = 0; i < 6; i++) BL(i * 150, 500 - i * 40, 190, 24);
-  for (i = 0; i < 13; i++) BL(900 + i * 170, 300, 100, 20);
-  for (i = 0; i < 4; i++) BL(3040 + i * 150, 300 + i * 40, 170, 24);
-  EX = 3490;
+  for (i = 0; i < 5; i++) BL(900 + i * 170, 300, 100, 20);
+  BL(1750, 300, 70, 20);
+  midRoom(1820, 300, 440, 130, 'tall');
+  BL(2260, 300, 70, 20);
+  for (i = 0; i < 8; i++) BL(2400 + i * 170, 300, 100, 20);
+  for (i = 0; i < 4; i++) BL(3690 + i * 150, 300 + i * 40, 170, 24);
+  EX = 4140;
 }
 
 function bossRoom() {
@@ -1302,7 +1608,7 @@ function placeAll(i) {
 var ENEMY_N = 30;
 
 function placeEnemies(i) {
-  var n = SURF.length, cand = [], k, j, s, e, r, zx, tries, tp, placed;
+  var n = SURF.length, cand = [], k, j, s, e, r, zx, tries, tp, placed, pr, lv;
   for (k = 1; k < n - 1; k++) {
     s = SURF[k];
     if (s.w < 70) continue;
@@ -1316,10 +1622,16 @@ function placeEnemies(i) {
     for (tries = 0; tries < 12 && !placed; tries++) {
       zx = s.x + 10 + rnd() * Math.max(4, s.w - 40);
       r = rnd();
-      tp = r < 0.25 ? 0 : r < 0.4 ? 4 : (r < 0.7 && i > 0) ? 2 : 1;
+      pr = (j + 0.5) / ENEMY_N;
+      lv = pr < 0.3 ? 0 : pr < 0.65 ? 1 : 2;
+      if (lv === 0) tp = r < 0.6 ? 0 : 1;
+      else if (lv === 1) tp = r < 0.3 ? 0 : r < 0.55 ? 4 : r < 0.8 ? 1 : (i > 0 ? 2 : 4);
+      else tp = r < 0.2 ? 0 : r < 0.45 ? 4 : r < 0.7 ? (i > 0 ? 2 : 4) : 1;
       if (tries > 5) tp = 1;
       e = tp === 0 ? mkE(0, zx, s.y - 14) : tp === 4 ? mkE(4, zx, s.y - 12) : tp === 2 ? mkE(2, zx, s.y - 12) : mkE(1, zx, s.y - 60 - rnd() * 24);
-      if (tp === 0) { e.pl = s.x + 2; e.pr = s.x + s.w - 2; }
+      if (tp === 0) { e.pl = s.x + 2; e.pr = s.x + s.w - 2; e.vx = -(0.35 + 0.2 * lv); }
+      e.lv = lv;
+      if (lv === 2) e.hp += 1;
       if (!hit(e.x, e.y, e.w, e.h)) { enemies.push(e); placed = true; }
     }
   }
@@ -1328,6 +1640,7 @@ function placeEnemies(i) {
     e = mkE(1, s.x + 10 + rnd() * Math.max(4, s.w - 40), s.y - 40 - rnd() * 44);
     if (!hit(e.x, e.y, e.w, e.h)) enemies.push(e);
   }
+  if (MR) return;
   k = Math.floor(n * 0.6);
   while (k < n - 2 && SURF[k].w < 140) k++;
   s = SURF[Math.min(k, n - 1)];
@@ -1342,7 +1655,7 @@ function buildStage(i) {
   ST = STAGES[i] || STAGES[0];
   ST.gm = STAGES[i] ? i : 0;
   seed = 100 + i * 977;
-  SOL = []; SURF = []; doors = []; tank = null; flag = null; cap = null; hrt = null; zones = []; enemies = [];
+  SOL = []; SURF = []; doors = []; mdoors = []; MR = null; tank = null; flag = null; cap = null; hrt = null; zones = []; enemies = []; npc = null;
   [L0, L1, L2, L3, L4, L5, L6, L7, L8][ST.gm]();
   bossRoom();
   BL(-60, -600, LW + 120, 600, false);
@@ -1350,6 +1663,8 @@ function buildStage(i) {
   BL(-60, -600, 60, LH + 1200, false);
   SOL[SOL.length - 1][4] = 1;
   placeAll(i);
+  placeNpc(i);
+  enemySnap = JSON.stringify(enemies);
 }
 
 function startStage(i) {
@@ -1551,6 +1866,13 @@ var BMV = {
 function bossAI(b, p) {
   if (!b || !p || !AR) return;
   var spec = BPAT[b.id] || BPAT[0], fly = !GRB[b.id], mv, pick, sp, tl = 18, done;
+  if (b.stun > 0) {
+    b.stun--; b.vx = 0; b.cd = Math.max(b.cd || 0, 20); b.tfl = false;
+    if (!fly) bground(b);
+    b.x = Math.max(AR.x + 4, Math.min(AR.x + AR.w - b.w - 4, b.x));
+    b.y = Math.max(AR.y + 2, Math.min(FY - b.h, b.y));
+    return;
+  }
   if (!b.rg && b.hp <= b.maxhp / 2) {
     b.rg = true; b.mv = null; b.cd = 30; b.vx = 0;
     shake = 24; flashT = 8;
@@ -1588,7 +1910,7 @@ function updateDoors() {
     d = doors[i];
     near = Math.abs(p.x + 6 - d.x - 6) < 34 && p.y + 20 > d.y - 10 && p.y < d.y + 66;
     o0 = d.o;
-    if (i === doors.length - 1 && p.x > d.x + 16 && !d.lock) { d.lock = true; tone(200, 60, 0.3, 'square', 0.1); }
+    if (p.x > d.x + 16 && !d.lock) { d.lock = true; tone(200, 60, 0.3, 'square', 0.1); }
     if (near && !d.lock && !(boss && boss.active)) d.o = Math.min(1, d.o + 0.05);
     else d.o = Math.max(0, d.o - 0.05);
     d.s[1] = d.o >= 1 ? -9999 : d.y;
@@ -1605,6 +1927,8 @@ function checkItems() {
   if (pressed.KeyA) cycleWpn();
   updateItems();
   updateDoors();
+  updateMid();
+  updateNpc();
   if (p.healQ > 0 && t % 2 === 0) {
     p.hp = Math.min(p.maxhp, p.hp + 1);
     p.healQ--;
@@ -1630,6 +1954,9 @@ function checkItems() {
     ht[stageIdx] = true;
     hgt = 0;
     state = 'heart';
+    p.hpT = Math.min(p.maxhp + 2, p.hp + 2);
+    p.inv = 400;
+    p.hurt = 0; p.kb = 0; p.vy = 0;
     p.vx = 0;
     p.dashT = 0;
     p.charge = 0;
@@ -1775,6 +2102,8 @@ function drawObjs() {
     ctx.fillStyle = '#ffe36b';
     ctx.fillRect(tx + 6, ty - 3, 8, 3);
   }
+  drawMid();
+  drawNpc();
   for (i = 0; i < doors.length; i++) {
     d = doors[i];
     h = Math.floor(56 * (1 - d.o));
@@ -1900,6 +2229,7 @@ function hurtPlayer(d, sx) {
   var p = player;
   if (!p || p.inv > 0 || (boss && boss.dead)) return;
   p.hp -= Math.max(1, d - BR) * (ch.defM || 1);
+  if (p.hp <= 0 && hasP(7) && !p.rv) { p.rv = true; p.hp = 1; flashT = 8; tone(500, 1500, 0.5, 'triangle', 0.14); burst(p.x + 6, p.y + 10, '#8ff', 24, 7); }
   p.inv = 70;
   p.hurt = 14;
   p.kb = (p.x < sx ? -1 : 1) * 1.4;
@@ -2001,7 +2331,7 @@ function updatePlayer() {
   }
   if (p.hurt <= 0 && pressed.KeyX) {
     if (p.ground) {
-      p.vy = p.slow ? -4.4 : -5.4;
+      p.vy = (p.slow ? -4.4 : -5.4) * (hasP(4) ? 1.08 : 1);
       p.ground = false;
       if (p.dashT > 0) { p.dj = true; p.dashT = 0; p.ad = true; } else p.dj = false;
       dust(p, 3);
@@ -2041,25 +2371,6 @@ function updatePlayer() {
       p.hovering = true;
       if (t % 3 === 0) parts.push({x: p.x + 2 + Math.random() * 8, y: p.y + 22, vx: 0, vy: 1.2, l: 8, c: Math.random() < 0.5 ? '#ffd24a' : '#fff', s: 2});
     }
-  }
-  if (ch.raku) {
-    if (p.novaCD > 0) p.novaCD--;
-    if (pressed.KeyF && !(p.novaCD > 0) && !(p.rk > 0) && p.hurt <= 0) {
-      p.rk = 40; p.novaCD = 260; p.novaMax = 260; p.dashT = 0; p.kick = 0; p.spin = 0; p.atk = 0; p.aj = false;
-      shake = 10; flashT = 6;
-      tone(120, 1200, 0.5, 'sawtooth', 0.14);
-    }
-  }
-  if (p.rk > 0) {
-    var rr = (40 - p.rk) * 3.2, am = ch.atkM || 1, k2;
-    p.rk--; p.vx = 0; p.vy = 0; p.dashT = 0; p.atk = 0; p.inv = Math.max(p.inv, 3);
-    var cx0 = p.x + 6, cy0 = p.y + 12;
-    if (p.rk % 6 === 0) {
-      for (k2 = 0; k2 < enemies.length; k2++) { var en2 = enemies[k2]; if (en2 && Math.hypot(en2.x + 7 - cx0, en2.y + 7 - cy0) < rr + 14) hurtEnemy(en2, 3 * am); }
-      if (boss && boss.active && !boss.dead && boss.inv <= 0 && Math.hypot(boss.x + 14 - cx0, boss.y + 20 - cy0) < rr + 24) hurtBoss(2 * am, {x: cx0, y: cy0});
-    }
-    for (k2 = ebul.length - 1; k2 >= 0; k2--) if (Math.hypot(ebul[k2].x - cx0, ebul[k2].y - cy0) < rr + 6) ebul.splice(k2, 1);
-    for (k2 = 0; k2 < 3; k2++) { var a2 = Math.random() * 6.28; parts.push({x: cx0 + Math.cos(a2) * rr, y: cy0 + Math.sin(a2) * rr, vx: Math.cos(a2) * 1.5, vy: Math.sin(a2) * 1.5, l: 14, c: Math.random() < 0.5 ? '#ffe36b' : '#fff', s: 3}); }
   }
   if (ch.nova) {
     if (p.novaCD > 0) p.novaCD--;
@@ -2113,7 +2424,6 @@ function updatePlayer() {
   if ((p.dashT > 0 || (p.dj && !p.ground)) && t % 2 === 0) {
     trail.push({x: p.x, y: p.y, face: p.face, dashT: p.dashT, dj: p.dj, ground: p.ground, vx: p.vx, vy: p.vy, wall: 0, hurt: 0, charge: 0, atk: 0, shootT: 0, combo: 0, ra: p.ra, inv: 0, l: 10});
   }
-  if (p.rk > 0) return;
   if (p.hurt > 0) {
     if (ch.type === 'shot' && p.charge > 0) {
       if (keys.KeyC) p.charge++;
@@ -2168,9 +2478,10 @@ function updatePlayer() {
         var en = enemies[e];
         if (en && en.sid !== p.sid && rect(hb, en)) { en.sid = p.sid; if (en.type === 4 && en.cov) { burst(en.x + 7, en.y + 4, '#aaf', 3); tone(1300, 1300, 0.03, 'square', 0.04); } else { en.hp -= (SLD[p.combo] + AD) * (ch.atkM || 1); en.inv = 6; burst(en.x + 7, en.y + 6, '#fff', 4); } }
       }
+      if (npc && !npc.free && npc.sid !== p.sid && rect(hb, npc)) { npc.sid = p.sid; npcHurt(3); }
       if (boss && !boss.dead && boss.sid !== p.sid && rect(hb, boss)) { boss.sid = p.sid; boss.hp -= (SLD[p.combo] + AD) * (ch.atkM || 1); boss.inv = 6; shake = 4; burst(boss.x + 14, boss.y + 20, '#fff', 6); }
       for (var k = ebul.length - 1; k >= 0; k--) {
-        if (rect(hb, ebul[k])) { burst(ebul[k].x, ebul[k].y, ch.acc, 4); ebul.splice(k, 1); }
+        if (hasP(0) && rect(hb, ebul[k])) { burst(ebul[k].x, ebul[k].y, ch.acc, 4); ebul.splice(k, 1); }
       }
     }
   }
@@ -2208,12 +2519,12 @@ function updateEnemies() {
           ebul.push({x: e.x + 7, y: e.y + 3, w: 5, h: 5, vx: (p.x - e.x) / td * 2.4, vy: (p.y - e.y) / td * 2.4});
           tone(700, 400, 0.05, 'square', 0.04);
         }
-      } else if (e.sc > 110 && td < 240) { e.bst = 3; e.sc = 9; }
+      } else if (e.sc > ((e.lv || 0) >= 2 ? 110 : 150) && td < 240) { e.bst = (e.lv || 0) >= 2 ? 3 : 2; e.sc = 9; }
     } else if (e.type === 4) {
       e.mt = (e.mt || 0) + 1;
       if (e.mt > 130) e.mt = 0;
       e.cov = e.mt < 90;
-      if (e.mt === 96 || e.mt === 108) {
+      if (e.mt === 96 || (e.mt === 108 && (e.lv || 0) >= 2)) {
         var td4 = Math.max(1, Math.hypot(p.x - e.x, p.y - e.y));
         if (td4 < 260) { ebul.push({x: e.x + 5, y: e.y + 3, w: 5, h: 5, vx: (p.x - e.x) / td4 * 2.4, vy: (p.y - e.y) / td4 * 2.4}); tone(700, 400, 0.05, 'square', 0.04); }
       }
@@ -2234,20 +2545,21 @@ function updateEnemies() {
         if (Math.abs(dx) < 200 && !hit(e.x + fsx, e.y, e.w, e.h)) e.x += fsx;
         if (!hit(e.x, fny, e.w, e.h)) e.y = fny;
         e.sd = (e.sd || 0) + 1;
-        if (e.sd > 220 && Math.abs(dx) < 150 && p.y > e.y + 10 && p.y - e.y < 130) {
+        if ((e.lv || 0) >= 1 && e.sd > 220 && Math.abs(dx) < 150 && p.y > e.y + 10 && p.y - e.y < 130) {
           var sdd = Math.max(1, Math.hypot(p.x - e.x, p.y - e.y));
           e.sd = 0; e.sw = 36; e.svx = (p.x - e.x) / sdd * 3; e.svy = (p.y - e.y) / sdd * 3;
           tone(900, 300, 0.12, 'sawtooth', 0.05);
         }
       }
       e.sc++;
-      if (e.sw <= 0 && e.sc > 120 && Math.abs(dx) < 220) {
+      if (e.sw <= 0 && e.sc > ((e.lv || 0) === 0 ? 200 : 120) && Math.abs(dx) < 220) {
         e.sc = 0;
         var dd = Math.max(1, Math.hypot(p.x - e.x, p.y - e.y));
         ebul.push({x: e.x + 7, y: e.y + 5, w: 5, h: 5, vx: (p.x - e.x) / dd * 2, vy: (p.y - e.y) / dd * 2});
       }
     }
     if (e.hp <= 0) {
+      if (e.type === 3) midDefeated(e);
       burst(e.x + 7, e.y + 7, '#fa3', 8, 5);
       for (var ra = 0; ra < 8; ra++) {
         var an = ra * Math.PI / 4;
@@ -2284,6 +2596,12 @@ function updateBullets() {
       if (b.sg !== undefined && b.sg !== sg) b.hits = null;
       b.sg = sg;
     }
+    if (hasP(0)) {
+      for (var cj = ebul.length - 1; cj >= 0; cj--) {
+        if (rect(b, ebul[cj]) && ebul[cj].w < 14) { burst(ebul[cj].x, ebul[cj].y, '#fff', 3); ebul.splice(cj, 1); if (!b.big) gone = true; }
+      }
+    }
+    if (npc && !npc.free && rect(b, npc)) { npcHurt(b.dmg || 1); if (!b.big) gone = true; }
     for (var e = 0; e < enemies.length; e++) {
       if (!rect(b, enemies[e])) continue;
       if (!b.big) { hurtEnemy(enemies[e], b.dmg); gone = true; }
@@ -2296,8 +2614,8 @@ function updateBullets() {
     if (boss && boss.active && !boss.dead && rect(b, boss)) {
       if (!b.big || !b.hits || b.hits.indexOf(boss) < 0) {
         var okB = boss.inv <= 0;
-        hurtBoss(b.dmg * (b.wi === WK[stageIdx] ? 2 : 1), b);
-        if (b.wi === WK[stageIdx]) boss.wk = 40;
+        hurtBoss(b.dmg * (b.wi === WK[stageIdx] ? 3 : 1), b);
+        if (b.wi === WK[stageIdx]) { boss.wk = 40; boss.stun = 40; boss.mv = null; tone(1100, 500, 0.12, 'square', 0.08); }
         if (b.big && okB) { if (!b.hits) b.hits = []; b.hits.push(boss); }
       }
       if (!b.big) gone = true;
@@ -2340,11 +2658,28 @@ function update() {
   if (shake > 0) shake--;
   if (hs > 0 && state === 'play') { hs--; return; }
   if (state === 'title') {
-    if (pressed.ArrowUp || pressed.ArrowDown) tm = (tm + 1) % 2;
+    if (pressed.ArrowUp) tm = (tm + 2) % 3;
+    if (pressed.ArrowDown) tm = (tm + 1) % 3;
     if (pressed.Enter) {
       if (tm === 0) state = 'select';
+      else if (tm === 1) { state = 'equip'; eqSel = 0; }
       else { state = 'option'; om = 0; }
     }
+    return;
+  }
+  if (state === 'equip') {
+    if (pressed.ArrowUp) eqSel = (eqSel + 8) % 9;
+    if (pressed.ArrowDown) eqSel = (eqSel + 1) % 9;
+    if (pressed.Enter) toggleEquip(eqSel);
+    if (pressed.Backspace || pressed.Escape) state = 'title';
+    return;
+  }
+  if (state === 'bossshow') {
+    stShow++;
+    if (stShow === 1) tone(180, 60, 0.5, 'sawtooth', 0.12);
+    if (stShow === 30) { tone(120, 40, 0.4, 'sawtooth', 0.14); }
+    if ((pressed.Backspace || pressed.Escape) && showIdx !== 8) { state = 'stage'; return; }
+    if (stShow >= 150 || (pressed.Enter && stShow > 30)) startStage(showIdx);
     return;
   }
   if (state === 'option') {
@@ -2376,18 +2711,16 @@ function update() {
     return;
   }
   if (state === 'stage') {
-    if (pressed.ArrowLeft && stSel < 8) stSel = stSel % 4 === 0 ? stSel + 3 : stSel - 1;
-    if (pressed.ArrowRight && stSel < 8) stSel = stSel % 4 === 3 ? stSel - 3 : stSel + 1;
-    if (stSel === 8 && (pressed.ArrowLeft || pressed.ArrowRight)) stSel = 4;
-    if (pressed.ArrowUp) stSel = stSel === 8 ? 4 : stSel < 4 ? 8 : stSel - 4;
-    if (pressed.ArrowDown) stSel = stSel === 8 ? 0 : stSel < 4 ? stSel + 4 : 8;
-    if (pressed.KeyA) cycleWpn();
-    if (pressed.Enter) {
-      var cc = 0;
-      for (var q = 0; q < 8; q++) if (cleared[q]) cc++;
-      if (stSel < 8 || cc >= 8) startStage(stSel);
-      else tone(150, 100, 0.2, 'square', 0.08);
-    }
+    var cc = 0;
+    for (var q = 0; q < 8; q++) if (cleared[q]) cc++;
+    if (stSel > 7) stSel = 0;
+    if (autoFin && cc >= 8 && !cleared[8]) { autoFin = false; showIdx = 8; stShow = 0; state = 'bossshow'; return; }
+    autoFin = false;
+    if (pressed.Escape) { cfBack = 'stage'; conf = 1; state = 'confirm'; return; }
+    if (pressed.ArrowLeft) stSel = stSel % 4 === 0 ? stSel + 3 : stSel - 1;
+    if (pressed.ArrowRight) stSel = stSel % 4 === 3 ? stSel - 3 : stSel + 1;
+    if (pressed.ArrowUp || pressed.ArrowDown) stSel = (stSel + 4) % 8;
+    if (pressed.Enter) { showIdx = stSel; stShow = 0; state = 'bossshow'; }
     if (pressed.Backspace) state = 'select';
     return;
   }
@@ -2440,8 +2773,8 @@ function update() {
   }
   if (state === 'pause') {
     if (pressed.Escape) { state = 'play'; return; }
-    if (pressed.ArrowUp) pm = (pm + 4) % 5;
-    if (pressed.ArrowDown) pm = (pm + 1) % 5;
+    if (pressed.ArrowUp) pm = (pm + 5) % 6;
+    if (pressed.ArrowDown) pm = (pm + 1) % 6;
     if (pm === 3 && (pressed.ArrowLeft || pressed.ArrowRight)) {
       VOL = Math.max(0, Math.min(1, Math.round((VOL + (pressed.ArrowRight ? 0.1 : -0.1)) * 10) / 10));
       tone(600, 600, 0.08, 'square', 0.08);
@@ -2450,15 +2783,34 @@ function update() {
     if (pressed.Enter) {
       if (pm === 0) state = 'play';
       else if (pm === 1) startStage(stageIdx);
-      else if (pm === 2) { state = 'stage'; ct = 0; }
+      else if (pm === 2) { state = 'stage'; autoFin = false; ct = 0; }
       else if (pm === 4) { muted = !muted; saveOpt(); }
+      else if (pm === 5) { cfBack = 'pause'; conf = 1; state = 'confirm'; }
     }
     return;
   }
-  if (state === 'play' && (pressed.Enter || pressed.Escape) && !(boss && boss.dead)) {
-    state = 'pause';
-    pm = 0;
+  if (state === 'status') {
+    var wl = [-1], wi3;
+    for (wi3 = 0; wi3 < 8; wi3++) if (wp[wi3]) wl.push(wi3);
+    var wk3 = wl.indexOf(cw);
+    if (wk3 < 0) wk3 = 0;
+    if (pressed.ArrowUp) { cw = wl[(wk3 + wl.length - 1) % wl.length]; tone(700, 900, 0.05, 'square', 0.05); }
+    if (pressed.ArrowDown) { cw = wl[(wk3 + 1) % wl.length]; tone(700, 900, 0.05, 'square', 0.05); }
+    if (pressed.Enter || pressed.Escape || pressed.Backspace) state = 'play';
     return;
+  }
+  if (state === 'confirm') {
+    if (pressed.ArrowLeft || pressed.ArrowRight || pressed.ArrowUp || pressed.ArrowDown) conf = 1 - conf;
+    if (pressed.Escape || pressed.Backspace) state = cfBack;
+    else if (pressed.Enter) {
+      if (conf === 0) { state = 'title'; tm = 0; }
+      else state = cfBack;
+    }
+    return;
+  }
+  if (state === 'play' && !(boss && (boss.dead || boss.pre > 0 || boss.intro > 0))) {
+    if (pressed.Enter) { state = 'status'; return; }
+    if (pressed.Escape) { state = 'pause'; pm = 0; return; }
   }
   if (state !== 'play') {
     ct++;
@@ -2466,6 +2818,7 @@ function update() {
     if (pressed.Enter && ct > 40) {
       if (state === 'over') lives = 2;
       state = state === 'clear' && stageIdx === 8 ? 'ending' : 'stage';
+      autoFin = true;
       ct = 0;
     }
     return;
@@ -2588,20 +2941,6 @@ function drawHero(p, c, gh) {
 
 function drawAura(p, c) {
   if (!p || !c) return;
-  if (p.rk > 0) {
-    var rr = (40 - p.rk) * 3.2, cx = p.x + 6, cy = p.y + 12, q2;
-    ctx.fillStyle = 'rgba(255,227,107,0.25)';
-    ctx.fillRect(Math.floor(cx - rr), Math.floor(cy - rr * 0.35), Math.floor(rr * 2), Math.floor(rr * 0.7));
-    for (q2 = 0; q2 < 3; q2++) {
-      var r3 = rr - q2 * 14;
-      if (r3 <= 0) continue;
-      ctx.strokeStyle = q2 ? 'rgba(255,255,255,0.8)' : '#ffe36b';
-      ctx.lineWidth = 3 - q2;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r3, 0, 6.283);
-      ctx.stroke();
-    }
-  }
   if (p.nova > 0) {
     ctx.fillStyle = 'rgba(111,232,255,0.35)';
     ctx.fillRect(Math.floor(p.x - 10), Math.floor(p.y - 6), 32, 32);
@@ -2770,9 +3109,15 @@ function drawSelect() {
     drawHeroO(o, c);
     drawAura(o, c);
     ctx.restore();
-    drawText(c.name, cx + 70, 192, 13, on ? '#ff0' : '#aaa', 'center');
-    drawText(ARMS[n][arm[n]].ad, cx + 70, 206, 9, '#ccc', 'center');
-    drawText(c.desc, cx + 70, 217, 8, '#889', 'center');
+    drawText(CHARS[n].name, cx + 70, 196, 15, on ? '#ff0' : '#aaa', 'center');
+    if (am > 1) drawText(ARMS[n][arm[n]].an, cx + 70, 214, 10, on ? '#fff' : '#889', 'center');
+    (function (k) { reg(cx, 90, 100, 130, function () { if (sel === k) pressed.Enter = true; else sel = k; }); })(n);
+    if (am > 1) {
+      (function (k) {
+        reg(cx + 104, 96, 36, 32, function () { sel = k; pressed.ArrowUp = true; });
+        reg(cx + 104, 130, 36, 32, function () { sel = k; pressed.ArrowDown = true; });
+      })(n);
+    }
     for (var di = 0; di < am; di++) {
       ctx.fillStyle = di === arm[n] ? '#ff0' : '#445';
       ctx.fillRect(cx + 70 - am * 6 + di * 12 + 1, 84, 8, 4);
@@ -2782,9 +3127,188 @@ function drawSelect() {
       drawText('▼', cx + 124, 130, 10, '#ff0', 'center');
     }
   }
-  if (Math.floor(t / 30) % 2 === 0) drawText('← → 캐릭터   ↑ ↓ 아머   ENTER 시작', W / 2, 242, 12, '#fff', 'center');
-  drawText('이동 ←→   대시 Z   점프 X   공격 C   특수무기 V   기가어택 F(울티메이트)', W / 2, 256, 9, '#889', 'center');
-  drawText('벽에서 X = 벽차기   메가맨 C 꾹 = 차지   팔콘/울티메이트 점프 중 X 꾹 = 호버링', W / 2, 267, 9, '#889', 'center');
+  if (Math.floor(t / 30) % 2 === 0) drawText('← → 캐릭터   ↑ ↓ 아머   ENTER 시작', W / 2, 246, 12, '#fff', 'center');
+  reg(W / 2 - 70, 232, 140, 22, function () { pressed.Enter = true; });
+  reg(8, 8, 70, 26, function () { pressed.Backspace = true; });
+  drawText('◀ 뒤로', 14, 26, 12, '#8cf');
+}
+
+
+function drawPortrait(c, idx, x, y, sc) {
+  var o = selHero[idx];
+  o.x = 0; o.y = 0; o.face = 1; o.ground = true; o.vx = 0; o.vy = 0; o.ra = 0;
+  o.dashT = 0; o.dj = false; o.wall = 0; o.hurt = 0; o.inv = 0; o.shootT = 0; o.combo = 0; o.charge = 0; o.atk = 0;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(sc, sc);
+  drawHeroO(o, c);
+  ctx.restore();
+}
+
+function drawStatus() {
+  var p = player, i, y, wl = [-1], wn2;
+  ctx.fillStyle = 'rgba(4,6,20,0.93)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#8cf';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(8, 8, W - 16, H - 16);
+  drawTextO('STATUS', W / 2, 30, 18, '#8cf', 'center');
+  reg(W - 44, 10, 34, 24, function () { pressed.Enter = true; });
+  drawText('✕', W - 27, 28, 16, '#fff', 'center');
+  // left: hero
+  ctx.fillStyle = '#10142a';
+  ctx.fillRect(16, 40, 62, 74);
+  drawPortrait(ch, ch.type === 'shot' ? 0 : 1, 38, 52, 2.5);
+  drawText(ch.name, 86, 56, 13, '#ff0');
+  drawText('LIFE x' + lives, 86, 74, 11, '#fff');
+  drawText('HEART ' + htCount() + '/9', 86, 90, 11, '#ff9ab0');
+  drawText('HP  ' + Math.max(0, Math.ceil(p.hp)) + ' / ' + p.maxhp, 16, 132, 11, '#fff');
+  hbar(16, 138, Math.max(0, Math.ceil(p.hp)), p.maxhp, '#6f6', Math.min(150, p.maxhp * 6));
+  // parts (Blaster)
+  if (ch.type === 'shot') {
+    drawText('ARMOR PARTS', 16, 164, 10, '#8cf');
+    for (i = 0; i < 4; i++) {
+      drawText((upg[i] ? '■ ' : '□ ') + PN[i] + (upg[i] ? '  ' + PD[i] : ''), 16, 178 + i * 12, 9, upg[i] ? '#ffe36b' : '#667');
+    }
+  }
+  // equipped item parts
+  drawText('ITEM PARTS', 16, 232, 10, '#8cf');
+  for (i = 0; i < 2; i++) drawText((i + 1) + '. ' + (eq[i] !== undefined ? PARTS[eq[i]].n : '-'), 16 + i * 80, 246, 9, eq[i] !== undefined ? '#9fe' : '#667');
+  // right: weapons
+  drawText('WEAPON', 188, 50, 11, '#8cf');
+  for (i = 0; i < 8; i++) if (wp[i]) wl.push(i);
+  for (i = -1; i < 8; i++) {
+    y = 66 + (i + 1) * 17;
+    var have = i < 0 || wp[i], sel2 = cw === i;
+    if (sel2) { ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(184, y - 12, 276, 16); }
+    drawText((sel2 ? '▶ ' : '   ') + (i < 0 ? '버스터' : have ? WN[i] : '- - - - -'), 190, y, 11, have ? (i < 0 ? '#fff' : WC[i]) : '#556');
+    if (i >= 0 && have) hbar(300, y - 7, Math.max(0, Math.floor(we[i])), 16, WC[i], 96);
+    if (have) (function (k) { reg(184, y - 12, 276, 16, function () { cw = k; tone(700, 900, 0.05, 'square', 0.05); }); })(i);
+  }
+  var kn = function (c2) { return codeName(OVR[c2] || c2); };
+  drawText('이동 ←→  대시 ' + kn('KeyZ') + '  점프 ' + kn('KeyX') + '  공격 ' + kn('KeyC') + '  특수무기 V  무기전환 ' + kn('KeyA') + (ch.nova ? '  기가어택 F' : ''), 184, 232, 9, '#99a');
+  drawText('벽에서 점프 = 벽차기' + (ch.type === 'shot' ? '   C 꾹 = 차지' : '   공중 2단 점프 후 C = 반월참') + (ch.hover ? '   점프 중 X 꾹 = 호버링' : ''), 184, 244, 9, '#99a');
+  drawText('↑↓ 무기 선택     ENTER / ESC 닫기', W / 2 + 20, 262, 9, '#889', 'center');
+}
+
+function drawPause() {
+  var PM = ['계속하기', '스테이지 다시 시작', '스테이지 선택으로', '볼륨', '소리 ' + (muted ? 'OFF' : 'ON'), '메인 화면으로'], i, v2, py;
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, W, H);
+  drawTextO('SETTINGS', W / 2, 52, 22, '#8cf', 'center');
+  for (i = 0; i < 6; i++) {
+    py = 88 + i * 25;
+    if (pm === i) {
+      ctx.fillStyle = 'rgba(255,255,255,0.14)';
+      ctx.fillRect(130, py - 16, 220, 22);
+    }
+    drawText((pm === i ? '▶ ' : '   ') + PM[i], i === 3 ? 140 : W / 2, py, 14, pm === i ? '#ff0' : '#ccc', i === 3 ? 'left' : 'center');
+    if (i === 3) {
+      for (v2 = 0; v2 < 10; v2++) {
+        ctx.fillStyle = v2 < Math.round(VOL * 10) ? '#8cf' : '#334';
+        ctx.fillRect(230 + v2 * 10, py - 10, 8, 10);
+      }
+      (function (yy) {
+        reg(130, yy - 16, 100, 22, function () { pm = 3; pressed.ArrowLeft = true; });
+        reg(230, yy - 16, 120, 22, function () { pm = 3; pressed.ArrowRight = true; });
+      })(py);
+    } else {
+      (function (k, yy) { reg(130, yy - 16, 220, 22, function () { if (pm === k) pressed.Enter = true; else pm = k; }); })(i, py);
+    }
+  }
+  drawText('↑↓ 선택   ENTER 확인   ESC 닫기', W / 2, 252, 10, '#889', 'center');
+}
+
+function drawConfirm() {
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#10142a';
+  ctx.fillRect(110, 80, 260, 110);
+  ctx.strokeStyle = '#8cf';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(110, 80, 260, 110);
+  drawText('메인 화면으로 돌아갈까요?', W / 2, 118, 14, '#fff', 'center');
+  drawText('진행 중인 스테이지는 저장되지 않습니다', W / 2, 136, 9, '#889', 'center');
+  var lab = ['예', '아니오'], i;
+  for (i = 0; i < 2; i++) {
+    var bx = 140 + i * 110;
+    ctx.fillStyle = conf === i ? '#2a3f88' : '#1a1f3a';
+    ctx.fillRect(bx, 150, 90, 28);
+    ctx.strokeStyle = conf === i ? '#ff0' : '#445';
+    ctx.lineWidth = conf === i ? 3 : 1;
+    ctx.strokeRect(bx, 150, 90, 28);
+    drawText(lab[i], bx + 45, 170, 14, conf === i ? '#ff0' : '#ccc', 'center');
+    (function (k) { reg(bx, 150, 90, 28, function () { if (conf === k) pressed.Enter = true; else conf = k; }); })(i);
+  }
+}
+
+function drawEquip() {
+  var i, y;
+  ctx.fillStyle = '#080a1e';
+  ctx.fillRect(0, 0, W, H);
+  for (i = 0; i < 40; i++) {
+    ctx.fillStyle = (i + Math.floor(t / 20)) % 7 === 0 ? '#fff' : '#446';
+    ctx.fillRect((i * 97) % W, (i * 53) % H, 1, 1);
+  }
+  drawTextO('ITEM PARTS', W / 2, 34, 20, '#8cf', 'center');
+  drawText('장착 ' + eq.length + ' / 2   (NPC를 구출하면 파츠를 얻습니다)', W / 2, 52, 10, '#9ab', 'center');
+  for (i = 0; i < 9; i++) {
+    y = 76 + i * 20;
+    if (eqSel === i) { ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(40, y - 14, 400, 19); }
+    var on = eq.indexOf(i) >= 0;
+    drawText((on ? '[E] ' : '    ') + (owned[i] ? PARTS[i].n : '? ? ? ? ?'), 52, y, 12, owned[i] ? (on ? '#9fe' : '#fff') : '#556');
+    drawText(owned[i] ? PARTS[i].d : (STAGES[i].n + ' 에서 구출'), 190, y, 10, owned[i] ? '#bbc' : '#556');
+    (function (k) { reg(40, y - 14, 400, 19, function () { if (eqSel === k) pressed.Enter = true; else eqSel = k; }); })(i);
+  }
+  reg(8, 8, 70, 26, function () { pressed.Backspace = true; });
+  drawText('◀ 뒤로', 14, 26, 12, '#8cf');
+  drawText('↑↓ 선택   ENTER 장착/해제   BACKSPACE 뒤로', W / 2, 262, 10, '#889', 'center');
+}
+
+function drawBossShow() {
+  var S = STAGES[showIdx], d = BOS[showIdx] || BOS[0], u = stShow, g, i, q, X, sc = 4, bx, by, e, ox = 0, oy = 0, col, k;
+  g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, S.a);
+  g.addColorStop(1, S.b);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = S.l;
+  for (i = 0; i < 30; i++) ctx.fillRect(Math.floor((i * 83 + u * (1 + i % 3) * 0.6) % W), Math.floor((i * 47 + u * 1.2) % 200), 2, 2);
+  ctx.fillStyle = S.g;
+  ctx.fillRect(0, 200, W, 70);
+  ctx.fillStyle = S.u;
+  ctx.fillRect(0, 200, W, 2);
+  if (u >= 30 && u < 48) { ox = (Math.random() - 0.5) * 6; oy = (Math.random() - 0.5) * 6; }
+  e = ease(Math.min(1, u / 30));
+  bx = W / 2 - d.w * sc / 2 + (1 - e) * (showIdx % 2 ? -340 : 340) + ox;
+  by = 202 - d.h * sc + oy;
+  if (u < 30 && u % 3 === 0) for (k = 0; k < 3; k++) ctx.fillRect(Math.floor(bx + (showIdx % 2 ? -10 : d.w * sc + 4) + k * 6), Math.floor(by + Math.random() * d.h * sc), 14, 2);
+  ctx.save();
+  ctx.translate(Math.floor(bx), Math.floor(by));
+  ctx.scale(sc, sc);
+  for (var pass = 0; pass < 2; pass++) {
+    for (i = 0; i < d.parts.length; i++) {
+      q = d.parts[i];
+      X = q[0];
+      if (pass === 0) { ctx.fillStyle = '#10131f'; ctx.fillRect(X - 1, q[1] - 1, q[2] + 2, q[3] + 2); }
+      else {
+        col = q[4] === 0 ? S.c : q[4] === 1 ? S.e : q[4] === 2 ? (Math.floor(t / 30) % 2 ? '#fff' : '#f33') : q[4] === 3 ? '#fff' : '#ffe36b';
+        ctx.fillStyle = col;
+        ctx.fillRect(X, q[1], q[2], q[3]);
+      }
+    }
+  }
+  ctx.restore();
+  if (u >= 30 && u < 40) { ctx.fillStyle = 'rgba(255,255,255,' + (1 - (u - 30) / 10) + ')'; ctx.fillRect(0, 0, W, H); }
+  if (u > 36) {
+    var a2 = Math.min(1, (u - 36) / 14), slide = (1 - a2) * 120;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, 36, W, 56);
+    drawTextO(BN[showIdx] || 'BOSS', W / 2 + slide, 68, 24, '#ffe36b', 'center');
+    drawText(S.n, W / 2 - slide, 84, 11, '#cde', 'center');
+  }
+  if (u > 40 && Math.floor(u / 15) % 2 === 0) drawText('TAP / ENTER', W - 12, H - 10, 10, '#aab', 'right');
+  reg(0, 0, W, H, function () { pressed.Enter = true; });
 }
 
 function drawGame() {
@@ -2822,7 +3346,7 @@ function drawGame() {
       ctx.fillStyle = '#000';
       ctx.fillRect(Math.floor(e.x) - 1, Math.floor(e.y) - 8, 22, 5);
       ctx.fillStyle = '#f66';
-      ctx.fillRect(Math.floor(e.x), Math.floor(e.y) - 7, Math.max(0, Math.floor(20 * e.hp / 14)), 3);
+      ctx.fillRect(Math.floor(e.x), Math.floor(e.y) - 7, Math.max(0, Math.floor(20 * e.hp / (e.mx || 14))), 3);
     } else if (e.type === 2) {
       ctx.fillStyle = fl ? '#fff' : ST.e;
       ctx.fillRect(Math.floor(e.x), Math.floor(e.y + 4), 14, 8);
@@ -2951,36 +3475,39 @@ function drawGame() {
     ctx.fillRect(0, 0, W, H);
     drawText(state === 'over' ? 'GAME OVER' : 'STAGE CLEAR!', W / 2, 130, 28, state === 'over' ? '#f55' : '#ff0', 'center');
     drawText('ENTER: 스테이지 선택으로', W / 2, 160, 12, '#fff', 'center');
+  } else if (state === 'status') {
+    drawStatus();
   } else if (state === 'pause') {
-    var PM = ['계속하기', '스테이지 다시 시작', '스테이지 선택으로', '볼륨', '소리 ' + (muted ? 'OFF' : 'ON')], v2;
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillRect(0, 0, W, H);
-    drawTextO('PAUSE', W / 2, 62, 24, '#8cf', 'center');
-    for (i = 0; i < 5; i++) {
-      var py = 98 + i * 26;
-      if (pm === i) {
-        ctx.fillStyle = 'rgba(255,255,255,0.14)';
-        ctx.fillRect(130, py - 16, 220, 22);
-      }
-      drawText((pm === i ? '▶ ' : '   ') + PM[i], i === 3 ? 140 : W / 2, py, 14, pm === i ? '#ff0' : '#ccc', i === 3 ? 'left' : 'center');
-      if (i === 3) {
-        for (v2 = 0; v2 < 10; v2++) {
-          ctx.fillStyle = v2 < Math.round(VOL * 10) ? '#8cf' : '#334';
-          ctx.fillRect(230 + v2 * 10, py - 10, 8, 10);
-        }
-      }
-    }
-    drawText('↑↓ 선택   ENTER 확인   ESC 계속', W / 2, 252, 10, '#889', 'center');
+    drawPause();
+  } else if (state === 'confirm') {
+    drawConfirm();
+  }
+  if (state === 'clear' || state === 'over' || state === 'ending') reg(0, 0, W, H, function () { pressed.Enter = true; });
+}
+
+function touchVis() {
+  if (!TB) return;
+  var g = (state === 'play' || state === 'ready' || state === 'dying' || state === 'heart' || state === 'capsule' || state === 'status' || state === 'pause' || state === 'confirm') ? 1 : 0, f = ch && ch.nova ? 1 : 0, k = g + '' + f, c;
+  if (k === tvKey) return;
+  tvKey = k;
+  for (c in TB) {
+    if (['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyA', 'KeyF'].indexOf(c) < 0) continue;
+    TB[c].style.display = (g && (c !== 'KeyF' || f)) ? 'flex' : 'none';
   }
 }
 
 function draw() {
   if (!ctx) return;
+  HIT.length = 0;
+  touchVis();
   ctx.setTransform(SC, 0, 0, SC, 0, 0);
-  if (state === 'title') drawTitle();
+  if (state === 'equip') drawEquip();
+  else if (state === 'bossshow') drawBossShow();
+  else if (state === 'title') drawTitle();
   else if (state === 'option') drawOption();
   else if (state === 'select') drawSelect();
   else if (state === 'stage') drawStageSel();
+  else if (state === 'confirm' && cfBack === 'stage') { drawStageSel(); drawConfirm(); }
   else drawGame();
 }
 
@@ -3022,6 +3549,14 @@ window.addEventListener('keyup', function (e) {
 resize();
 window.addEventListener('resize', resize);
 loadOpt();
+loadParts();
+cv.addEventListener('pointerdown', function (ev) {
+  var AX = window.AudioContext || window.webkitAudioContext;
+  if (!AC && AX) AC = new AX();
+  if (AC && AC.state === 'suspended') AC.resume();
+  var r = cv.getBoundingClientRect(), x = (ev.clientX - r.left) * W / r.width, y = (ev.clientY - r.top) * H / r.height;
+  if (tapAt(x, y)) ev.preventDefault();
+});
 if ('ontouchstart' in window) makeTouch();
 requestAnimationFrame(loop);
 </script>
