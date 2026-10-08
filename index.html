@@ -259,7 +259,10 @@ function drawStageSel() {
     ctx.strokeRect(cx, cy, 104, 74);
     (function (k) { reg(cx, cy, 104, 74, function () { if (stSel === k) pressed.Enter = true; else stSel = k; }); })(n);
   }
-  drawText('←→↑↓ 선택   ENTER 출격   ESC 메인 화면', W / 2, 258, 10, '#889', 'center');
+  drawText('←→↑↓ 선택   ENTER 출격   E 파츠 장착   ESC 메인 화면', W / 2 - 40, 258, 10, '#889', 'center');
+  ctx.fillStyle = 'rgba(80,140,255,0.25)'; ctx.fillRect(W - 108, H - 34, 100, 26); ctx.strokeStyle = '#8cf'; ctx.lineWidth = 1; ctx.strokeRect(W - 108, H - 34, 100, 26);
+  drawText('파츠 장착 [E]', W - 58, H - 17, 11, '#cfe', 'center');
+  reg(W - 108, H - 34, 100, 26, function () { pressed.KeyE = true; });
   reg(8, 8, 70, 26, function () { pressed.Backspace = true; });
   drawText('◀ 뒤로', 14, 26, 12, '#8cf');
 }
@@ -290,7 +293,7 @@ var PARTS = [
   {n: '리바이브 칩', d: '스테이지당 1회, 치명타를 체력 1로 버팀'},
   {n: '차지 부스터', d: '차지 시간 단축 / 제로는 연속 공격 단축'}
 ];
-var npc = null, cfBack = 'stage', owned = [], eq = [], conf = 1, stShow = 0, showIdx = 0, HIT = [], eqSel = 0, TB = null, tvKey = '';
+var npc = null, cfBack = 'stage', eqBack = 'title', owned = [], eq = [], conf = 1, stShow = 0, showIdx = 0, HIT = [], eqSel = 0, TB = null, tvKey = '';
 function hasP(i) { return eq.indexOf(i) >= 0; }
 function loadParts() {
   try {
@@ -964,7 +967,7 @@ function placeNpc(i) {
   if (owned[i] || n < 4) return;
   for (kk = 0; kk < n; kk++) {
     k = (Math.floor(n * 0.35) + kk) % n;
-    if (k === 0 || k === n - 1) continue;
+    if (k === 0 || k === n - 1 || !RCH[k]) continue;
     s = SURF[k];
     if (s.w < 80) continue;
     c = {x: s.x + Math.floor(s.w / 2) - 9, y: s.y - 28, w: 18, h: 28};
@@ -1427,6 +1430,36 @@ function bossRoom() {
   LW = ax + 476;
 }
 
+var RCH = [];
+function surfGo(A, B) {
+  var gap = Math.max(B.x - (A.x + A.w), A.x - (B.x + B.w), 0), rise = A.y - B.y;
+  if (rise > 44) return false;
+  if (rise > 40) return gap <= 52;
+  if (rise > 36) return gap <= 56;
+  if (rise > 30) return gap <= 62;
+  if (rise > 20) return gap <= 70;
+  if (rise > 0) return gap <= 78;
+  if (rise >= -40) return gap <= 90;
+  return gap <= 98;
+}
+function computeReach() {
+  var n = SURF.length, k, j, q, st = -1, bd = 1e9, d, A;
+  RCH = [];
+  for (k = 0; k < n; k++) RCH.push(false);
+  for (k = 0; k < n; k++) {
+    A = SURF[k];
+    d = Math.abs(A.y - (SY + 20)) * 3 + Math.max(A.x - SX, SX - (A.x + A.w), 0);
+    if (d < bd) { bd = d; st = k; }
+  }
+  if (st < 0) return;
+  RCH[st] = true;
+  q = [st];
+  while (q.length) {
+    j = q.pop();
+    for (k = 0; k < n; k++) if (!RCH[k] && (surfGo(SURF[j], SURF[k]) || (MR && !MR.tower && SURF[j].x + SURF[j].w <= MR.x + 10 && SURF[k].x >= MR.x + MR.w - 10 && Math.abs(SURF[j].y - SURF[k].y) <= 12 && SURF[k].x - SURF[j].x - SURF[j].w < MR.w + 200))) { RCH[k] = true; q.push(k); }
+  }
+}
+
 function farFromStart(x, y) {
   return Math.abs(x - SX) + Math.abs(y - SY) > 500;
 }
@@ -1462,7 +1495,7 @@ function hShaft(s) {
 }
 
 function hLedge(s) {
-  var o, gx, ds = shuf([0, 1]), gap = 64 + Math.floor(Math.random() * 16);
+  var o, gx, ds = shuf([0, 1]), gap = 50 + Math.floor(Math.random() * 14);
   if (s.w < 40) return false;
   for (o = 0; o < 2; o++) {
     gx = ds[o] === 0 ? s.x + s.w + gap : s.x - gap - 60;
@@ -1477,23 +1510,23 @@ function hLedge(s) {
 }
 
 function hStones(s) {
-  var d = Math.random() < 0.5 ? 1 : -1, zx, j, bx, by, cnt = 4 + Math.floor(Math.random() * 2), pit = 80, rise = 36, hy = s.y, x0, ok = true, plat = [];
+  var d = Math.random() < 0.5 ? 1 : -1, zx, j, bx, by, cnt = 4 + Math.floor(Math.random() * 2), pit = 76, rise = 32, hy = s.y, x0, ok = true, plat = [];
   if (s.w < 100) return false;
-  x0 = d > 0 ? s.x + 14 : s.x + s.w - 14 - 26;
+  x0 = d > 0 ? s.x + 14 : s.x + s.w - 14 - 40;
   if (hy - rise * cnt - 40 < 0 || !farFromStart(x0, hy)) return false;
   for (j = 0; j < cnt; j++) {
     bx = x0 + d * j * pit;
     by = hy - 30 - rise * j;
-    if (hit(bx - 4, by - 26, 34, 30)) { ok = false; break; }
-    plat.push([bx, by, 26, 8]);
+    if (hit(bx - 4, by - 26, 48, 30) || (j < cnt - 1 && hit(Math.min(bx, bx + d * pit) - 4, by - rise - 40, pit + 48, rise + 44))) { ok = false; break; }
+    plat.push([bx, by, 40, 8]);
   }
   if (!ok) return false;
   for (j = 0; j < plat.length; j++) SOL.push(plat[j]);
-  return heartAt(plat[cnt - 1][0] + 8, plat[cnt - 1][1] - 18);
+  return heartAt(plat[cnt - 1][0] + 13, plat[cnt - 1][1] - 18);
 }
 
 function hMoat(s) {
-  var hy = s.y, zx, side = 28 + Math.floor(Math.random() * 10), lh = 38 + Math.floor(Math.random() * 6);
+  var hy = s.y, zx, side = 28 + Math.floor(Math.random() * 10), lh = 32 + Math.floor(Math.random() * 6);
   if (s.w < 170) return false;
   zx = s.x + Math.floor((s.w - 56) / 2);
   if (!farFromStart(zx, hy) || hy - lh - 40 < 0) return false;
@@ -1539,20 +1572,20 @@ function hStairs(s) {
 function placeHeart(i) {
   var n = SURF.length, a = Math.floor(n * (0.5 + 0.05 * (i % 4))), idx = [], k, t2, s2, types = shuf([hLedge, hStones, hMoat, hTunnel, hSaw]), done = false;
   hrt = null;
-  for (k = a; k < n; k++) idx.push(k);
+  for (k = a; k < n; k++) if (RCH[k]) idx.push(k);
   for (t2 = 0; t2 < types.length && !done; t2++) {
     shuf(idx);
     for (k = 0; k < idx.length && !done; k++) done = types[t2](SURF[idx[k]]);
   }
   idx = [];
-  for (k = Math.floor(n * 0.3); k < a; k++) idx.push(k);
+  for (k = Math.floor(n * 0.3); k < a; k++) if (RCH[k]) idx.push(k);
   for (t2 = 0; t2 < types.length && !done; t2++) {
     shuf(idx);
     for (k = 0; k < idx.length && !done; k++) done = types[t2](SURF[idx[k]]);
   }
   for (k = n - 1; k >= 0 && !done; k--) {
     s2 = SURF[k];
-    if (s2.w >= 40 && Math.abs(s2.x + s2.w / 2 - SX) + Math.abs(s2.y - SY) > 300 && !hit(s2.x + s2.w / 2 - 7, s2.y - 24, 14, 14)) {
+    if (RCH[k] && s2.w >= 40 && Math.abs(s2.x + s2.w / 2 - SX) + Math.abs(s2.y - SY) > 300 && !hit(s2.x + s2.w / 2 - 7, s2.y - 24, 14, 14)) {
       zones.push({x: s2.x + s2.w / 2 - 40, y: s2.y - 8, w: 24, h: 8, k: 1}, {x: s2.x + s2.w / 2 + 16, y: s2.y - 8, w: 24, h: 8, k: 1});
       done = heartAt(s2.x + s2.w / 2 - 7, s2.y - 24);
     }
@@ -1662,7 +1695,9 @@ function buildStage(i) {
   SOL[SOL.length - 1][4] = 1;
   BL(-60, -600, 60, LH + 1200, false);
   SOL[SOL.length - 1][4] = 1;
+  computeReach();
   placeAll(i);
+  if (hrt) zones = zones.filter(function (z) { return !(z.k === 0 && Math.abs(z.x + z.w / 2 - hrt.x) < 190 && z.y + z.h > hrt.y - 30 && z.y < hrt.y + 150); });
   placeNpc(i);
   enemySnap = JSON.stringify(enemies);
 }
@@ -2299,7 +2334,7 @@ function updatePlayer() {
   }
   if (p.ground) { p.ad = false; p.aj = false; p.wd = false; p.spin = 0; }
   if (p.wall) p.ad = false;
-  if (p.hurt <= 0 && pressed.KeyZ && p.dashT <= 0 && (p.ground || (!p.ad && !p.aj && (!p.wall || p.kick > 0)))) {
+  if (p.hurt <= 0 && pressed.KeyZ && p.dashT <= 0 && (p.ground || (!p.ad && (!p.wall || p.kick > 0)))) {
     p.ad = !p.ground;
     p.dashT = p.ad ? 20 : 26;
     p.kick = 0;
@@ -2614,8 +2649,8 @@ function updateBullets() {
     if (boss && boss.active && !boss.dead && rect(b, boss)) {
       if (!b.big || !b.hits || b.hits.indexOf(boss) < 0) {
         var okB = boss.inv <= 0;
-        hurtBoss(b.dmg * (b.wi === WK[stageIdx] ? 3 : 1), b);
-        if (b.wi === WK[stageIdx]) { boss.wk = 40; boss.stun = 40; boss.mv = null; tone(1100, 500, 0.12, 'square', 0.08); }
+        if (okB) hurtBoss(b.dmg * (b.wi === WK[stageIdx] ? 3 : 1), b);
+        if (okB && b.wi === WK[stageIdx]) { boss.wk = 40; boss.stun = 40; boss.mv = null; tone(1100, 500, 0.12, 'square', 0.08); }
         if (b.big && okB) { if (!b.hits) b.hits = []; b.hits.push(boss); }
       }
       if (!b.big) gone = true;
@@ -2662,7 +2697,7 @@ function update() {
     if (pressed.ArrowDown) tm = (tm + 1) % 3;
     if (pressed.Enter) {
       if (tm === 0) state = 'select';
-      else if (tm === 1) { state = 'equip'; eqSel = 0; }
+      else if (tm === 1) { state = 'equip'; eqSel = 0; eqBack = 'title'; }
       else { state = 'option'; om = 0; }
     }
     return;
@@ -2671,7 +2706,7 @@ function update() {
     if (pressed.ArrowUp) eqSel = (eqSel + 8) % 9;
     if (pressed.ArrowDown) eqSel = (eqSel + 1) % 9;
     if (pressed.Enter) toggleEquip(eqSel);
-    if (pressed.Backspace || pressed.Escape) state = 'title';
+    if (pressed.Backspace || pressed.Escape) state = eqBack;
     return;
   }
   if (state === 'bossshow') {
@@ -2716,6 +2751,7 @@ function update() {
     if (stSel > 7) stSel = 0;
     if (autoFin && cc >= 8 && !cleared[8]) { autoFin = false; showIdx = 8; stShow = 0; state = 'bossshow'; return; }
     autoFin = false;
+    if (pressed.KeyE) { state = 'equip'; eqSel = 0; eqBack = 'stage'; return; }
     if (pressed.Escape) { cfBack = 'stage'; conf = 1; state = 'confirm'; return; }
     if (pressed.ArrowLeft) stSel = stSel % 4 === 0 ? stSel + 3 : stSel - 1;
     if (pressed.ArrowRight) stSel = stSel % 4 === 3 ? stSel - 3 : stSel + 1;
@@ -3487,12 +3523,12 @@ function drawGame() {
 
 function touchVis() {
   if (!TB) return;
-  var g = (state === 'play' || state === 'ready' || state === 'dying' || state === 'heart' || state === 'capsule' || state === 'status' || state === 'pause' || state === 'confirm') ? 1 : 0, f = ch && ch.nova ? 1 : 0, k = g + '' + f, c;
+  var g = (state === 'play' || state === 'ready' || state === 'dying' || state === 'heart' || state === 'capsule' || state === 'status' || state === 'pause' || state === 'confirm') ? 1 : 0, f = ch && ch.nova ? 1 : 0, sh = ch && ch.type === 'shot' ? 1 : 0, k = g + '' + f + sh, c;
   if (k === tvKey) return;
   tvKey = k;
   for (c in TB) {
     if (['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyA', 'KeyF'].indexOf(c) < 0) continue;
-    TB[c].style.display = (g && (c !== 'KeyF' || f)) ? 'flex' : 'none';
+    TB[c].style.display = (g && (c !== 'KeyF' || f) && ((c !== 'KeyV' && c !== 'KeyA') || sh)) ? 'flex' : 'none';
   }
 }
 
